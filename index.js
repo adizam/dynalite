@@ -6,7 +6,18 @@ var http = require('http'),
     crypto = require('crypto'),
     crc32 = require('buffer-crc32'),
     validations = require('./validations'),
-    db = require('./db')
+    db = require('./db'),
+    bunyan = require('bunyan'),
+    PrettyStream = require('bunyan-prettystream')
+
+var stdOut = new PrettyStream()
+stdOut.pipe(process.stdout)
+
+var logger = bunyan.createLogger({
+  name: 'dynalite',
+  stream: stdOut,
+  level: 'warn',
+})
 
 var MAX_REQUEST_BYTES = 16 * 1024 * 1024
 
@@ -21,6 +32,10 @@ module.exports = dynalite
 function dynalite(options) {
   options = options || {}
   var server, store = db.create(options), requestHandler = httpHandler.bind(null, store)
+
+  if (options.verbose) {
+    logger.level('debug')
+  }
 
   if (options.ssl) {
     options.key = options.key || fs.readFileSync(path.join(__dirname, 'ssl', 'server-key.pem'))
@@ -65,6 +80,13 @@ function sendData(req, res, data, statusCode) {
   var body = JSON.stringify(data)
   req.removeAllListeners()
   res.statusCode = statusCode || 200
+
+  if (res.statusCode === 200) {
+    logger.info({body: data, status: statusCode})
+  } else {
+    logger.warn({body: data, status: statusCode})
+  }
+  
   res.setHeader('x-amz-crc32', crc32.unsigned(body))
   res.setHeader('Content-Type', res.contentType)
   res.setHeader('Content-Length', Buffer.byteLength(body, 'utf8'))
